@@ -87,7 +87,7 @@ void print_data(DataObj **in) {
         printf("%c: ", 'a' + i);
 
         if(len > 0) {
-            printf("%s[%llu]\n", typestring(t), len);
+            printf("%s[%lu]\n", typestring(t), len);
         } else {
             void *dat = (*in)->data[i].data;
             switch(t) {
@@ -109,7 +109,7 @@ void print_data(DataObj **in) {
                     break;
                 case(F32):
                 case(F64):
-                    printf("%.04d",  *(double*)dat);
+                    printf("%.04f",  *(double*)dat);
                     break;
                 case(Bool):
                     printf("%s", (*(unsigned char*)dat != 0)?"True":"False");
@@ -183,7 +183,7 @@ void print_topology(const char *filename) {
         if(buffer == EOF) {
             if(feof(f)) break;
             fgetpos(f, &r);
-            fprintf(stderr, "Either EOF or something unexpected happened(0x%x)\n", r);
+            fprintf(stderr, "Either EOF or something unexpected happened(0x%lx)\n", r.__pos);
             exit(EXIT_FAILURE);
         }
         if(fgetpos(f, &r)) {
@@ -195,7 +195,7 @@ void print_topology(const char *filename) {
         // we only support binary
         if(buffer != 'b'){
             fprintf(stderr, "Unsupported filetype.\n");
-            fprintf(stderr, "Got type: 0x%x at pos %x\nExpected: 0x62\n", buffer, r);
+            fprintf(stderr, "Got type: 0x%x at pos %lx\nExpected: 0x62\n", buffer, r.__pos);
             exit(EXIT_FAILURE);
         }
 
@@ -204,7 +204,7 @@ void print_topology(const char *filename) {
         buffer = fgetc(f);
         if(buffer != 2) {
             fprintf(stderr, "Unsupported version! (only supported version is 2)\n");
-            fprintf(stderr, "Got version: %d at pos %x\nExpected: 0x62\n", buffer, r);
+            fprintf(stderr, "Got version: %d at pos %lx\nExpected: 0x62\n", buffer, r.__pos);
             exit(EXIT_FAILURE);
         };
 
@@ -244,7 +244,7 @@ void print_topology(const char *filename) {
                     fprintf(stderr, "Reading integer failed! (wrong size read)\n");
                     exit(EXIT_FAILURE);
                 }
-                printf("[%llu]", tmp_size);
+                printf("[%lu]", tmp_size);
                 total_array_size *= tmp_size;
                 // This line is only to save m/N, remove for better
                 // combatability
@@ -308,7 +308,7 @@ void parse(const char *filename, data_format **in, byte verbose) {
         if(buffer == EOF) {
             if(feof(f)) break;
             fgetpos(f, &r);
-            fprintf(stderr, "Either EOF or something unexpected happened(0x%x)\n", r);
+            fprintf(stderr, "Either EOF or something unexpected happened(0x%lx)\n", r.__pos);
             exit(EXIT_FAILURE);
         }
         if(fgetpos(f, &r)) {
@@ -320,7 +320,7 @@ void parse(const char *filename, data_format **in, byte verbose) {
         // we only support binary
         if(buffer != 'b'){
             fprintf(stderr, "Unsupported filetype.\n");
-            fprintf(stderr, "Got type: 0x%x at pos %x\nExpected: 0x62\n", buffer, r);
+            fprintf(stderr, "Got type: 0x%x at pos %lx\nExpected: 0x62\n", buffer, r.__pos);
             exit(EXIT_FAILURE);
         }
         if(verbose) printf("Binary dataset detected\n");
@@ -329,7 +329,7 @@ void parse(const char *filename, data_format **in, byte verbose) {
         buffer = fgetc(f);
         if(buffer != 2) {
             fprintf(stderr, "Unsupported version!\n");
-            fprintf(stderr, "Got version: %d at pos %x\nExpected: 0x62\n", buffer, r);
+            fprintf(stderr, "Got version: %d at pos %lx\nExpected: 0x62\n", buffer, r.__pos);
             exit(EXIT_FAILURE);
         };
         if(verbose) printf("Version 2 detected\n");
@@ -370,7 +370,7 @@ void parse(const char *filename, data_format **in, byte verbose) {
                     fprintf(stderr, "Reading integer failed! (wrong size read)\n");
                     exit(EXIT_FAILURE);
                 }
-                if(verbose) printf("[%llu]", tmp_size);
+                if(verbose) printf("[%lu]", tmp_size);
                 total_array_size *= tmp_size;
                 // This line is only to save m/N, remove for better
                 // combatability
@@ -378,10 +378,11 @@ void parse(const char *filename, data_format **in, byte verbose) {
                 else (*in)->N = tmp_size;
                 d--;
             };
-            if(verbose)
+            if(verbose) {
                 if(total_array_size > 1)
-                    printf("%s (%llu)\n", vartype, total_array_size);
+                    printf("%s (%lu)\n", vartype, total_array_size);
                 else printf("%s\n", vartype);
+            }
 
             // Read the values
             // This is where we would have liked a cleaner solution
@@ -412,11 +413,11 @@ void parse(const char *filename, data_format **in, byte verbose) {
               case 5:
                 (*in)->images = (float*)malloc(typesize*total_array_size);
                 tmp_n = fread((*in)->images, typesize, total_array_size, f);
-                if(verbose) printf("items read: %llu\n", tmp_n);
+                if(verbose) printf("items read: %lu\n", tmp_n);
                 break;
               default:
                 fgetpos(f, &r);
-                fprintf(stderr, "Something went wrong!\nfile at %d", r);
+                fprintf(stderr, "Something went wrong!\nfile at %lu", r.__pos);
                 exit(EXIT_FAILURE);
             }
             if(tmp_n != total_array_size) {
@@ -434,10 +435,10 @@ void parse(const char *filename, data_format **in, byte verbose) {
     if(verbose) {
         printf("k: %d\n", *(*in)->k);
         printf("n: %d\n", *(*in)->n);
-        printf("freq: %.02f\n", (*in)->freq);
+        printf("freq: %.02f\n",  (*in)->freq);
         printf("hfrac: %.02f\n", (*in)->hfrac);
-        printf("lam: %.02f\n", (*in)->lam);
-        printf("m: %llu\tN: %llu\n", (*in)->m, (*in)->N);
+        printf("lam: %.02f\n",   (*in)->lam);
+        printf("m: %lu\tN: %lu\n", (*in)->m, (*in)->N);
         printf("first 5 pixels:\n");
         for(int i = 0; i< 5; i++) printf("%.02f\t", (*in)->images[i]);
         printf("\nlast 5 pixels:\n");
