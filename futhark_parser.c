@@ -5,21 +5,6 @@
 
 #include "futhark_parser.h"
 
-// Futhark variable types
-typedef enum {
-    I8,
-    I16,
-    I32,
-    I64,
-    U8,
-    U16,
-    U32,
-    U64,
-    F32,
-    F64,
-    Bool,
-} Type;
-
 // Gosh i hate long-ass switch statements
 const char* typestring(Type t) {
     // The leading space is because the binary is written like this. blame
@@ -65,19 +50,20 @@ const char* typestring(Type t) {
     return "Error";
 }
 
-// Struct to hold information about the variable type
-// length = 0 : single value
-// length > 0 : array of n variables
-typedef struct {
-    void *data;
-    Type type;
-    size_t length;
-} Format;
-
-typedef struct {
-    Format *data;
-    size_t length;
-} DataObj;
+Type get_type_from_str(char *vartype) {
+    if(!strcmp("  i8", vartype)) return I8;
+    if(!strcmp(" i16", vartype)) return I16;
+    if(!strcmp(" i32", vartype)) return I32;
+    if(!strcmp(" i64", vartype)) return I64;
+    if(!strcmp("  u8", vartype)) return U8;
+    if(!strcmp(" u16", vartype)) return U16;
+    if(!strcmp(" u32", vartype)) return U32;
+    if(!strcmp(" u64", vartype)) return U64;
+    if(!strcmp(" f32", vartype)) return F32;
+    if(!strcmp(" f64", vartype)) return F64;
+    if(!strcmp("bool", vartype)) return Bool;
+    return Bool;
+}
 
 void print_data(DataObj **in) {
     for(int i = 0; i < (int)(*in)->length; i++) {
@@ -86,8 +72,12 @@ void print_data(DataObj **in) {
 
         printf("%c: ", 'a' + i);
 
-        if(len > 0) {
-            printf("%s[%lu]\n", typestring(t), len);
+        if(len > 1) {
+            for(size_t j = 0; j < (*in)->data[i].n_dimensions; j++) {
+                printf("[%ld]", (*in)->data[i].dimensions[j]);
+            }
+            printf("%s", typestring(t));
+            printf("\n");
         } else {
             void *dat = (*in)->data[i].data;
             switch(t) {
@@ -267,27 +257,11 @@ void print_topology(const char *filename) {
     printf("Total of %d variables.\n", counter);
 }
 
-////////////////////////////////////////////////////////////////////////////////
-//                                   LEGACY                                   //
-////////////////////////////////////////////////////////////////////////////////
-
-// TODO: Change this struct to your needs
-struct data_format {
-    int *k;
-    int *n;
-    float *freq;
-    float *hfrac;
-    float *lam;
-    float *images; // m*N size
-    size_t m;
-    size_t N;
-};
-
-typedef struct data_format data_format;
-
-void parse(const char *filename, data_format **in, byte verbose) {
+void parse(const char *filename, DataObj **in) {
     // Allocate variables
-    *in = (data_format*)malloc(sizeof(struct data_format));
+    *in = (DataObj*)malloc(sizeof(DataObj));
+    (*in)->data = (Format*)malloc(sizeof(Format)*16);
+
     // Open file
     FILE *f = fopen(filename, "rb");
     if(errno) {
@@ -323,7 +297,6 @@ void parse(const char *filename, data_format **in, byte verbose) {
             fprintf(stderr, "Got type: 0x%x at pos %lx\nExpected: 0x62\n", buffer, r.__pos);
             exit(EXIT_FAILURE);
         }
-        if(verbose) printf("Binary dataset detected\n");
         // Read the version (we dont support anything else but 2 but it's ignored (1b)
         // anyways
         buffer = fgetc(f);
@@ -332,8 +305,7 @@ void parse(const char *filename, data_format **in, byte verbose) {
             fprintf(stderr, "Got version: %d at pos %lx\nExpected: 0x62\n", buffer, r.__pos);
             exit(EXIT_FAILURE);
         };
-        if(verbose) printf("Version 2 detected\n");
-        // Read Dimensions -- currently only supporting scalars (aka. 0) (1b)
+        // Read Dimensions
         int d;
         buffer = fgetc(f);
         if(buffer == EOF) {
@@ -341,7 +313,10 @@ void parse(const char *filename, data_format **in, byte verbose) {
             exit(EXIT_FAILURE);
         }
         d = buffer;
-        if(verbose) printf("Dimensions: %d\n", d);
+
+        (*in)->data[counter].n_dimensions = d;
+        // Change to actual datatype size
+        (*in)->data[counter].dimensions = (size_t*)malloc(d*sizeof(size_t));
 
         // Read types (4b)
         // Skip WS
@@ -353,10 +328,16 @@ void parse(const char *filename, data_format **in, byte verbose) {
             exit(EXIT_FAILURE);
         }
 
+        Type t = get_type_from_str(vartype);
+        (*in)->data[counter].type = t;
+
+        // Currently only support i32 and f32 cuz i am mad retard
         if(!strcmp(" i32", vartype) ||
            !strcmp(" f32", vartype)) {
             vartype++; // fuck that leading whitespace
 
+            // Allocate space for the variable
+            // TODO: get the more appropriate size instead
             size_t typesize = sizeof(int);
             size_t total_array_size = 1;
 
@@ -370,58 +351,33 @@ void parse(const char *filename, data_format **in, byte verbose) {
                     fprintf(stderr, "Reading integer failed! (wrong size read)\n");
                     exit(EXIT_FAILURE);
                 }
-                if(verbose) printf("[%lu]", tmp_size);
                 total_array_size *= tmp_size;
-                // This line is only to save m/N, remove for better
-                // combatability
-                if(d == 2) (*in)->m = tmp_size;
-                else (*in)->N = tmp_size;
+                (*in)->data[counter].dimensions[d-1] = tmp_size;
                 d--;
             };
-            if(verbose) {
-                if(total_array_size > 1)
-                    printf("%s (%lu)\n", vartype, total_array_size);
-                else printf("%s\n", vartype);
-            }
 
             // Read the values
-            // This is where we would have liked a cleaner solution
-            // The only changed thing between if-statements are the value stored
+            (*in)->data[counter].length = total_array_size;
 
-            // TODO: change these accordingly
-            switch(counter) {
-              case 0:
-                (*in)->k = (int*)malloc(typesize*total_array_size);
-                tmp_n = fread((*in)->k, typesize, total_array_size, f);
-                break;
-              case 1:
-                (*in)->n = (int*)malloc(typesize*total_array_size);
-                tmp_n = fread((*in)->n, typesize, total_array_size, f);
-                break;
-              case 2:
-                (*in)->freq = (float*)malloc(typesize*total_array_size);
-                tmp_n = fread((*in)->freq, typesize, total_array_size, f);
-                break;
-              case 3:
-                (*in)->hfrac = (float*)malloc(typesize*total_array_size);
-                tmp_n = fread((*in)->hfrac, typesize, total_array_size, f);
-                break;
-              case 4:
-                (*in)->lam = (float*)malloc(typesize*total_array_size);
-                tmp_n = fread((*in)->lam, typesize, total_array_size, f);
-                break;
-              case 5:
-                (*in)->images = (float*)malloc(typesize*total_array_size);
-                tmp_n = fread((*in)->images, typesize, total_array_size, f);
-                if(verbose) printf("items read: %lu\n", tmp_n);
-                break;
-              default:
-                fgetpos(f, &r);
-                fprintf(stderr, "Something went wrong!\nfile at %lu", r.__pos);
-                exit(EXIT_FAILURE);
-            }
-            if(tmp_n != total_array_size) {
+            // Malloc the appropriate size
+            (*in)->data[counter].data = (int*)malloc(typesize*total_array_size);
+
+            // Read all the data!
+            tmp_n = fread((*in)->data[counter].data, typesize, total_array_size, f);
+
+            if(tmp_n != total_array_size || ferror(f)) {
                 fprintf(stderr, "Reading %s failed! (wrong size read)\n", vartype);
+                fprintf(stderr, "var(%d): ", counter);
+                if((*in)->data[counter].length > 1) {
+                    fprintf(stderr, "total %ld values with ", (*in)->data[counter].length);
+                    for(size_t i = 0; i < (*in)->data[counter].n_dimensions; i++) {
+                        fprintf(stderr, "[%ld]", (*in)->data[counter].dimensions[i]);
+                    }
+                    fprintf(stderr, "dimensions.\n");
+                }
+                else fprintf(stderr, "%ld", (long)(&(*in)->data[counter].data));
+                fprintf(stderr, "(expected %ld instead i got %ld)\n", total_array_size, tmp_n);
+                if(ferror(f)) perror("Error");
                 exit(EXIT_FAILURE);
             }
         } else {
@@ -431,19 +387,5 @@ void parse(const char *filename, data_format **in, byte verbose) {
 
         counter++;
     }
-
-    if(verbose) {
-        printf("k: %d\n", *(*in)->k);
-        printf("n: %d\n", *(*in)->n);
-        printf("freq: %.02f\n",  (*in)->freq);
-        printf("hfrac: %.02f\n", (*in)->hfrac);
-        printf("lam: %.02f\n",   (*in)->lam);
-        printf("m: %lu\tN: %lu\n", (*in)->m, (*in)->N);
-        printf("first 5 pixels:\n");
-        for(int i = 0; i< 5; i++) printf("%.02f\t", (*in)->images[i]);
-        printf("\nlast 5 pixels:\n");
-        for(int i = sizeof((*in)->images)-5; i < sizeof((*in)->images); i++) printf("%.02f\t", (*in)->images[i]);
-
-        printf("\n");
-    }
+    (*in)->length = counter;
 }

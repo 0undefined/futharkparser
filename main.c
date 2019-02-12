@@ -6,8 +6,9 @@
 #include "futhark_parser.h"
 
 int main() {
-    struct data_format *inputdata = NULL;
+    DataObj *inputdata = NULL;
     //print_heuristics("data.in");
-    print_topology("data.in");
-    parse("data.in", &inputdata, 0);
+    //print_topology("data.in");
+    parse("data.in", &inputdata);
+    print_data(&inputdata);
 }
