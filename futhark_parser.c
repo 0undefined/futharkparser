@@ -1,13 +1,13 @@
-#ifndef FUTHARK_PARSER
-#define FUTHARK_PARSER
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
 
+#include "futhark_parser.h"
+
+
 // TODO: Change this struct to your needs
-struct InPutFormat {
+struct data_format {
     int *k;
     int *n;
     float *freq;
@@ -18,9 +18,7 @@ struct InPutFormat {
     size_t N;
 };
 
-typedef struct InPutFormat InPutFormat;
-
-typedef char byte;
+typedef struct data_format data_format;
 
 // Returns 1 if b is whitespace
 byte is_whitespace(byte b) {
@@ -44,9 +42,9 @@ void fstep_back_pos(FILE *f) {
 }
 
 
-void parse(const char *filename, InPutFormat **in, byte verbose) {
+void parse(const char *filename, data_format **in, byte verbose) {
     // Allocate variables
-    *in = (InPutFormat*)malloc(sizeof(struct InPutFormat));
+    *in = (data_format*)malloc(sizeof(struct data_format));
     // Open file
     FILE *f = fopen(filename, "rb");
     if(errno) {
@@ -205,4 +203,3 @@ void parse(const char *filename, InPutFormat **in, byte verbose) {
         printf("\n");
     }
 }
-#endif
